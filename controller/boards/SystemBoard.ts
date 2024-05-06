@@ -4234,56 +4234,37 @@ export class HeaterCommands extends BoardCommands {
                                 switch (htype.name) {
                                     case 'solar':
                                         if (mode === 'solar' || mode === 'solarpref') {
-                                            /*
-                                                From the manual:
-                                                Screen (3/3): Solar temperature differential start up and run settings.
-                                                Start: Set the temperature differential to start heating from 3° to 9°. For example, if
-                                                “Start” is set to 3°, this ensures that the temperature has to deviate by 3° at least to the
-                                                specified set point temperature (in the Heat menu, on page 25) before it switches on.
-                                                Once the solar comes on it will start converging as it is heating. This ensures that it
-                                                will not continually be switching on and off.
-                                                Run: Set the temperature differential to stop heating from 2° to 5°. This setting sets
-                                                how close to the target set point temperature to switch off solar heat.
-                                            */
-                                            // RSG 04.15.2024 - Updates to heater logic for start/stop deltas.  #925
-                                            // 1.  For all heating cases in order for the heater to turn on, the solar temp > water temp.
-                                            // 2.  If the water temp is below the set point, we want to turn on the heater
-                                            // 3.  But only if the prevHeaterOffTemp - water temp > start temp delta
-                                            // 4.  Also only if there is enough heat ('run') to make it worthwhile
-                                            // 5.  The heater should run until it reaches the set point + stop delta
-                                            // 6.  When the heater turns off, note the water temp ("prevHeaterOffTemp").  This will only live in the application, not persisted.
-                                            let hState: HeaterState = 
-                                            state.heaters.getItemById(heater.id);
-                                            if (state.temps.solar > body.temp // 1
-                                                && body.temp < cfgBody.heatSetpoint // 2
-                                                && (typeof hState.prevHeaterOffTemp === 'undefined' || ((hState.prevHeaterOffTemp - body.temp) > heater.startTempDelta)) // 3
-                                                && (state.temps.solar - body.temp) > heater.stopTempDelta // 4
-                                                && body.temp < cfgBody.heatSetpoint // 5
+                                            let hState: HeaterState = state.heaters.getItemById(heater.id);
+
+                                            // solar heating
+                                            if (body.temp < cfgBody.heatSetpoint &&
+                                                state.temps.solar > body.temp + (hstate.isOn ? heater.stopTempDelta : heater.startTempDelta) &&
+                                                typeof hState.prevHeaterOffTemp === 'undefined'
                                             ) {
-                                                // if (((hstate.isOn && body.temp < cfgBody.heatSetpoint + heater.stopTempDelta) || (!hstate.isOn && body.temp > cfgBody.heatSetpoint - heater.startTempDelta)) 
-                                                //     && state.temps.solar > body.temp ) {
                                                 isOn = true;
                                                 body.heatStatus = sys.board.valueMaps.heatStatus.getValue('solar');
                                                 isHeating = true;
                                             }
-                                            // reverse logic from heating states
-                                            else if (heater.coolingEnabled
-                                                && state.heliotrope.isNight
-                                                && state.temps.solar < body.temp // 1
-                                                && body.temp > cfgBody.coolSetpoint // 2
-                                                && (typeof hState.prevHeaterOffTemp === 'undefined' || ((hState.prevHeaterOffTemp - body.temp) < heater.startTempDelta)) // 3
-                                                && (body.temp - state.temps.solar) > heater.stopTempDelta // 4
-                                                && body.temp > (cfgBody.coolSetpoint + heater.stopTempDelta) // 5
+
+                                            // nocturnal cooling
+                                            else if (heater.coolingEnabled &&
+                                                 body.temp > cfgBody.coolSetpoint && 
+                                                 state.temps.solar < body.temp - (hstate.isOn ? heater.stopTempDelta : heater.startTempDelta) &&
+                                                 state.heliotrope.isNight
                                             ) {
-                                                // else if (heater.coolingEnabled && (body.temp > cfgBody.coolSetpoint -  heater.stopTempDelta && body.temp < cfgBody.coolSetpoint - heater.startTempDelta) && state.heliotrope.isNight && state.temps.solar < body.temp) {
                                                 isOn = true;
                                                 body.heatStatus = sys.board.valueMaps.heatStatus.getValue('cooling');
                                                 isHeating = true;
                                                 isCooling = true;
                                             }
-                                            if (hstate.isOn && !isOn) { 
-                                                hState.prevHeaterOffTemp = body.temp; 
-                                            } // 6  
+
+                                            // solar heating temperature diffential latch
+                                            if (typeof hState.prevHeaterOffTemp === 'undefined') {
+                                                if (body.temp >= cfgBody.heatSetpoint) hState.prevHeaterOffTemp = body.temp;
+                                            }
+                                            else {
+                                                if (hState.prevHeaterOffTemp - body.temp > 1) hState.prevHeaterOffTemp = undefined;
+                                            }
                                         }
                                         break;
                                     case 'ultratemp':
